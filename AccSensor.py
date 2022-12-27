@@ -1,6 +1,4 @@
 import math
-# import matplotlib.pyplot as plt
-# import matplotlib.animation as animation
 import numpy as np
 import serial
 import time
@@ -12,12 +10,12 @@ class AccChannel(object):
         self.zero = 0.0                   # 加速度零点
         self.speed = 0.0                  # 速度
         self.position = 0.0               # 位置
-        self.filter_k = 0.95              # 一阶滞后滤波系数
-        self.cali_k = 0.995               # 零点标定一阶之后滤波系数
+        self.filter_k = 0.7               # 一阶滞后滤波系数
+        self.cali_k = 0.9                 # 零点标定一阶之后滤波系数
         self.stall_enabled = True         # 强制零速
         self.stall_time = 0.0             # 零速时间
         self.max_stall_time = 1.0         # 最大零速时间
-        self.min_acc = 0.1                # 最小加速度
+        self.min_acc = 0.2                # 最小加速度
 
     def accumulate(self, acc, time):
         """
@@ -86,9 +84,9 @@ class AccSensor(object):
         self.angle = None                                          # 实测角度
 
         # x, y, z方向的加速度积分处理
-        self.sensor_x = AccChannel()
-        self.sensor_y = AccChannel()
-        self.sensor_z = AccChannel()
+        self.axis_x = AccChannel()
+        self.axis_y = AccChannel()
+        self.axis_z = AccChannel()
 
     @staticmethod
     def get_float_values(data_hex, k):
@@ -144,119 +142,62 @@ class AccSensor(object):
                 self.seriel_buffer.clear()
                 return True
 
-    def show_sensor_data(self):
-        #print("sample time", time.asctime(time.localtime(self.time_stamp)))
-        """
-        if self.lst_time_stamp is not None:
-            print("sample time", round((self.time_stamp - self.lst_time_stamp) * 1000))
-            print("acc = (%8.5f, %8.5f, %8.5f)" % self.a)
-        """
-        print("acc = (%8.5f, %8.5f), spd = (%8.5f, %8.5f), pos = (%8.5f, %8.5f)" %
-              (self.sensor_x.acc, self.sensor_y.acc, self.sensor_x.speed, self.sensor_y.speed, self.sensor_x.position, self.sensor_y.position))
-
     def calibrate(self):
-        avg_x, times = self.sensor_x.calibrate(self.a[0])
-        avg_y, _ = self.sensor_y.calibrate(self.a[1])
-        avg_z, _ = self.sensor_z.calibrate(self.a[2])
-        return avg_x, avg_y, avg_z, times
+        self.read_from_sensor()
+        avg_x, _ = self.axis_x.calibrate(self.a[0])
+        avg_y, _ = self.axis_y.calibrate(self.a[1])
+        avg_z, _ = self.axis_z.calibrate(self.a[2])
+        return avg_x, avg_y, avg_z
 
     def refresh(self):
         self.read_from_sensor()
-        """
-        self.sensor_x.refresh(self.a[0], self.interval)
-        self.sensor_y.refresh(self.a[1], self.interval)
-        self.sensor_z.refresh(self.a[2], self.interval)
-        """
+        self.axis_x.refresh(self.a[0], self.interval)
+        self.axis_y.refresh(self.a[1], self.interval)
+        self.axis_z.refresh(self.a[2], self.interval)
 
 
-sensor = AccSensor("com4")
-
-"""
-cur_time = 0.0
-dtime = 0.01
-freq = 0.1
-position_x = list()
-position_y = list()
+def time_interval(time_begin):
+    time_now = time.time()
+    ms = round((time_now - time_begin) * 1000)
+    return ms
 
 
-fig = plt.figure(figsize=(10, 10))
-ax = fig.add_subplot(autoscale_on=False, xlim=(-10, 10), ylim=(-10, 10))
-ax.grid()
-trace, = ax.plot([], [])
-"""
-
-"""
-def update(i):
-    cur_time = i * dtime
-    acc_x = math.sin(cur_time * freq * math.pi * 2.0)
-    acc_y = math.sin(cur_time * freq * math.pi * 4.0)
-    sensor.refresh(acc_x, acc_y, dtime)
-    position_x.append(sensor.sensor_x.position)
-    position_y.append(sensor.sensor_y.position)
-    if len(position_x) > 100:
-        position_x.pop(0)
-        position_y.pop(0)
-    trace.set_data(position_x, position_y)
-
-
-    x = np.linspace(0, 1, 100)
-    y = np.sin(x + i * 0.01) * 10
-    trace.set_data(x, y)
-
-
-    return trace,
-"""
-
-
-#ani = animation.FuncAnimation(fig, update, frames=None, interval=10, blit=True)
-#plt.show()
-
-if __name__ == '__main__':
-    """
-    _, _, _, times = sensor.calibrate()
-
+def sensor_test(sensor):
+    print("Sensor calibrating")
     time1 = time.time()
-    while times < 100:
-        sensor.refresh()
-        _, _, _, times = sensor.calibrate()
-    time2 = time.time()
-    ms = round((time2 - time1) * 1000)
-    print("ms = %f" % ms)
-    print("sample time", time.asctime(time.localtime(time2 - time1)))
+    while time_interval(time1) < 10000:
+        x_zero, y_zero, z_zero = sensor.calibrate()
+        print("zero = (%8.5f, %8.5f, %8.5f)" % (x_zero, y_zero, z_zero))
 
     while True:
         sensor.refresh()
-        sensor.show_sensor_data()
-    """
+        print("acc = (%8.5f, %8.5f, %8.5f), spd = (%8.5f, %8.5f, %8.5f), pos = (%8.5f, %8.5f, %8.5f)" %
+              (sensor.axis_x.acc, sensor.axis_y.acc, sensor.axis_z.acc,
+               sensor.axis_x.speed, sensor.axis_y.speed, sensor.axis_z.acc,
+               sensor.axis_x.position, sensor.axis_y.position, sensor.axis_z.position))
+
+
+def save_raw_acc(sensor):
+    print("Saving raw sensor data")
     acc_list = list()
-    times = 0
-    while times < 50:
-        sensor.refresh()
+    time1 = time.time()
+    while time_interval(time1) < 30000:
+        sensor.read_from_sensor()
         acc_list.append(sensor.a[0])
         acc_list.append(sensor.a[1])
-        times += 1
-    print("Cali finished")
-
-    while times < 500:
-        sensor.refresh()
-        acc_list.append(sensor.a[0])
-        acc_list.append(sensor.a[1])
-        times += 1
-
+        acc_list.append(sensor.a[2])
+        print("acc = (%8.5f, %8.5f, %8.5f)" % (sensor.a[0], sensor.a[1], sensor.a[2]))
     np.save("加速度.npy", np.array(acc_list))
 
-    #plt.show()
 
-    """
-    sensor = AccSensor()
-    time = 0.0
-    dtime = 0.01
-    freq = 0.1
-    while True:
-        acc_x = math.sin(time * freq * math.pi * 2.0)
-        acc_y = math.sin(time * freq * math.pi * 4.0)
-        time += dtime
-        sensor.refresh(acc_x, acc_y, dtime)
-        print(sensor.sensor_x.position)
-    """
+def read_raw_acc():
+    acc = np.load("加速度.npy")
+    print(acc)
+
+
+if __name__ == '__main__':
+    #sensor = AccSensor("com4")
+
+    #sensor_test(sensor)
+    read_raw_acc()
 
